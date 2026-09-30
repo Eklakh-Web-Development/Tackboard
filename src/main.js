@@ -73,7 +73,25 @@ function renderBoard(){
   buildLanes(); renderCards();
 }
 function buildLanes(){
-  $('#lanes').replaceChildren(...LANES.map(([col,label])=>{const s=document.createElement('section');s.className='lane';s.dataset.col=col;s.innerHTML='<h2>'+label+'<small>0</small></h2><div class="cards"></div><form class="add-form"><input maxlength="200" placeholder="Add a card"><button type="submit">+</button></form>';s.querySelector('form').onsubmit=e=>{e.preventDefault();const input=e.currentTarget.querySelector('input'),title=input.value.trim();if(title)createCard(col,title);input.value=''};return s;}));
+  $('#lanes').replaceChildren(...LANES.map(([col,label])=>{
+    const s=document.createElement('section');
+    s.className='lane';s.dataset.col=col;
+    s.innerHTML='<h2>'+label+'<small>0</small></h2><div class="cards"></div><form class="add-form"><input maxlength="200" placeholder="Add a card"><button type="submit">+</button></form>';
+    const cards=s.querySelector('.cards');
+    s.ondragover=e=>{e.preventDefault();e.dataTransfer.dropEffect='move'};
+    s.ondrop=e=>{
+      e.preventDefault();
+      const moving=e.dataTransfer.getData('text/plain');
+      if(!moving)return;
+      const current=state.cards.get(moving);
+      if(!current)return;
+      const laneCards=[...state.cards.values()].filter(c=>c.col===col&&c.id!==moving);
+      const pos=laneCards.length?Math.max(...laneCards.map(c=>c.pos))+1:1;
+      moveCard(moving,col,pos);
+    };
+    s.querySelector('form').onsubmit=e=>{e.preventDefault();const input=e.currentTarget.querySelector('input'),title=input.value.trim();if(title)createCard(col,title);input.value=''};
+    return s;
+  }));
 }
 function renderCards(){
   for(const [col] of LANES){const lane=document.querySelector('.lane[data-col="'+col+'"]');if(!lane)continue;const cards=[...state.cards.values()].filter(c=>c.col===col).sort((a,b)=>a.pos-b.pos||a.id.localeCompare(b.id));lane.querySelector('small').textContent=cards.length;lane.querySelector('.cards').replaceChildren(...cards.map(cardEl));}
@@ -83,9 +101,10 @@ function cardEl(c){
   const title=document.createElement('p');title.className='title';title.textContent=c.title;title.tabIndex=0;
   const del=document.createElement('button');del.className='x';del.textContent='×';del.setAttribute('aria-label','Delete '+c.title);del.onclick=()=>deleteCard(c);
   e.append(title,del);title.ondblclick=()=>editCard(c,title);
-  e.ondragstart=x=>x.dataTransfer.setData('text/plain',c.id);
-  e.ondragover=x=>x.preventDefault();
-  e.ondrop=x=>{x.preventDefault();const moving=x.dataTransfer.getData('text/plain');if(moving&&moving!==c.id)moveCard(moving,c.col,c.pos-0.5)};
+  e.ondragstart=x=>{x.dataTransfer.effectAllowed='move';x.dataTransfer.setData('text/plain',c.id);e.classList.add('dragging')};
+  e.ondragend=()=>e.classList.remove('dragging');
+  e.ondragover=x=>{x.preventDefault();x.dataTransfer.dropEffect='move'};
+  e.ondrop=x=>{x.preventDefault();x.stopPropagation();const moving=x.dataTransfer.getData('text/plain');if(moving&&moving!==c.id)moveCard(moving,c.col,c.pos-0.5)};
   return e;
 }
 function editCard(c,node){
