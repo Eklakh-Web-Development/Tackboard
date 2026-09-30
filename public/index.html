@@ -60,7 +60,7 @@ const $ = (s) => document.querySelector(s);
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now()).replace(/[^\w-]/g, '').slice(0, 24);
 
 const board = () => window.__TB_BOARD__ || 'main';
-if (!location.hash) history.replaceState(null, '', '#' + board);
+
 $('#bname').textContent = 'Tackboard';
 let myName = localStorage.getItem('tb-name') || prompt('Choose your display name')?.trim() || 'Guest';
 let authToken = localStorage.getItem('tb-token') || '';
@@ -213,7 +213,7 @@ async function boot() {
   }
   let raw = location.hash.slice(1) || '';
   let [boardId, query] = raw.split('?');
-  boardId = (boardId || '').replace(/[^\\w-]/g,'').slice(0,40);
+  boardId = (boardId || '').replace(/[^\w-]/g,'').slice(0,40);
   const shareKey = new URLSearchParams(query || '').get('key') || '';
   if (!boardId) {
     const r = await fetch('/api/boards', {headers:{'x-auth-token':authToken}});
