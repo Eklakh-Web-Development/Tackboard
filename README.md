@@ -1,103 +1,131 @@
 # Tackboard
 
-**Real-time collaborative Kanban board for teams.**
+**Real-time collaborative Kanban for authenticated teams.**
 
-Tackboard is a deliberately small full-stack collaboration system built around **WebSockets, optimistic UI, server-sequenced operations, idempotent retries, authenticated users, shareable boards, and persistent SQLite**.
+Tackboard is a production-oriented collaboration product built around **Supabase Auth, PostgreSQL, Row Level Security, Realtime, optimistic UI, private presence, and Vercel deployment**.
 
-## Features
+## Product capabilities
 
-- Real-time WebSocket collaboration
-- Optimistic UI with pending-operation replay
-- Idempotent operation IDs for reconnect/resend
-- Authenticated user sessions and live presence
-- Shareable board links for collaborators
-- Owner/editor board membership
-- SQLite WAL persistence
-- Transactional mutations + board versions
-- Input validation, payload limits, rate limiting and origin checks
-- WebSocket heartbeat and reconnect backoff
-- Docker + persistent volume
-- Automated integration smoke tests + Docker build
-- /healthz deployment endpoint
+- Email/password authentication with persistent Supabase sessions
+- User profiles and display names
+- Private boards with owner/editor membership
+- Share links that require authentication before joining
+- Hashed share tokens with owner-only rotation
+- PostgreSQL persistence
+- Row Level Security on every application table
+- Supabase Realtime database synchronization
+- Private Realtime presence per board
+- Optimistic card creation, editing, moving and deletion
+- Responsive Kanban UI
+- Vercel-ready build and security headers
+- GitHub CI build verification
 
 ## Architecture
 
-Browser → REST auth/boards + WebSocket → Node.js → SQLite persistent volume.
-
-The client renders **authoritative server state + unacknowledged local operations**. Accepted operations are committed transactionally, assigned a board version, broadcast to other members, and acknowledged to the sender.
-
-## Run locally
-
-Requires Node.js 22+.
-
-```bash
-npm ci
-npm start
+```
+Browser
+  │
+  ├── Supabase Auth
+  ├── Supabase Data API + RLS
+  └── Supabase Realtime
+          │
+          ▼
+     PostgreSQL
+          │
+          ▼
+       Vercel
 ```
 
-Open http://localhost:3000. Create a board, copy its share URL, and open that URL in another browser/profile.
+The browser never receives a service-role key. The publishable key is safe for client use only because access is enforced by authentication and RLS.
 
-```bash
-npm test
-docker compose up --build
-```
+Realtime card changes are delivered through Supabase Realtime. Board presence uses private Realtime channels whose authorization is tied to board membership.
 
-## Production deployment
+## Local development
 
-The included Render and Fly configurations use a persistent /data volume for SQLite.
+Requires Node.js 20+.
 
-**Important: run exactly one app instance.** WebSocket rooms and operation deduplication are process-local. Horizontal scaling requires Postgres + Redis/pub-sub.
-
-Set:
+Create a Supabase project, apply `supabase/migrations/202610010001_production.sql`, then create `.env.local`:
 
 ```text
-ALLOWED_ORIGIN=https://your-public-domain.example
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
-The app exposes `GET /healthz`.
+Then:
 
-### Render
+```bash
+npm install
+npm run dev
+```
 
-Use a persistent-disk plan, one instance, and set `ALLOWED_ORIGIN` to the exact public HTTPS origin.
+For a production build:
 
-### Fly.io
+```bash
+npm run build
+npm run preview
+```
 
-Set a unique app name in `fly.toml`, create a persistent /data volume, then deploy one machine.
+## Supabase production setup
+
+1. Create the Supabase project.
+2. Apply the migration in `supabase/migrations/`.
+3. Enable Email authentication.
+4. Configure the production Site URL and redirect URLs.
+5. Disable public access for Realtime channels.
+6. Confirm `cards` is in the `supabase_realtime` publication.
+7. Run Supabase security/performance advisors after the migration.
+8. Configure the Vercel environment variables with the project's URL and publishable key.
+
+The migration enables RLS, least-privilege grants, private board presence authorization, hashed share tokens, and the required Realtime publication.
+
+## Vercel deployment
+
+Connect this GitHub repository to Vercel and deploy the `main` branch.
+
+Set these environment variables in Vercel:
+
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY
+```
+
+Do **not** add `service_role`, secret keys, database passwords, or other privileged credentials to `VITE_` variables.
 
 ## Security model
 
-This version uses link-based collaboration rather than enterprise identity.
+- Supabase Auth owns identity and session lifecycle.
+- RLS is the database authorization boundary.
+- Every board read requires membership.
+- Card reads/writes require board membership.
+- Board rename/delete requires ownership.
+- Share tokens are stored only as SHA-256 hashes.
+- Joining a board requires an authenticated user and a valid share token.
+- Realtime presence uses private channels authorized by board membership.
+- The frontend uses only the Supabase publishable key.
 
-- Session tokens are generated server-side.
-- Only SHA-256 token hashes are stored in SQLite.
-- Share tokens are also stored only as hashes.
-- WebSocket connections require an authenticated board member.
-- Share links grant editor membership.
-- Owner-only board deletion is enforced.
-- `ALLOWED_ORIGIN` can restrict browser origins.
+## Current production boundary
 
-For enterprise deployment, add OIDC/SSO, session expiry/rotation, invite revocation, centralized audit/observability, and multi-instance infrastructure.
+This architecture is suitable for a real multi-user web product without the single-process limitation of the previous Node/WebSocket/SQLite implementation.
 
-## Data model
+Before opening the product to a large public audience, add:
 
-`users`, `boards`, `board_members`, `cards`, and `activity_log`.
+1. Password reset / account recovery UX
+2. Email verification UX and production redirect configuration
+3. Board member management and invite revocation UI
+4. Playwright multi-browser realtime tests
+5. Error monitoring and structured application telemetry
+6. Rate limiting/abuse controls for public signup and board creation
+7. Automated database backups and restore drills
+8. Ordering rebalance for very large boards
+9. Product analytics and privacy/terms pages
 
-Foreign keys are enabled and board deletion cascades to dependent records.
+## Project structure
 
-## Known limitations
-
-- Share links grant editor access.
-- Pending offline operations are memory-only.
-- HTML5 drag/drop is not touch-first.
-- Fractional ordering should eventually get threshold-based rebalancing.
-- Single-instance only.
-
-## Roadmap
-
-- Board management UI
-- Card detail/description editor
-- Activity panel
-- Playwright multi-browser tests
-- Session expiry and share-link revocation
-- OIDC/SSO
-- Postgres + Redis for horizontal scaling
+```
+index.html
+src/main.js
+src/style.css
+supabase/migrations/
+vercel.json
+.github/workflows/ci.yml
+```

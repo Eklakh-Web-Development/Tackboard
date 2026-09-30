@@ -1,17 +1,10 @@
 {
   "name": "tackboard",
-  "version": "1.0.0",
-  "description": "Real-time collaborative project board: WebSockets + optimistic UI",
-  "type": "module",
+  "version": "2.0.0",
   "private": true,
+  "type": "module",
   "engines": { "node": ">=20" },
-  "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "test": "node test/smoke.mjs"
-  },
-  "dependencies": {
-    "better-sqlite3": "^11.5.0",
-    "ws": "^8.18.0"
-  }
+  "scripts": { "dev": "vite", "build": "vite build", "preview": "vite preview" },
+  "dependencies": { "@supabase/supabase-js": "^2.58.0" },
+  "devDependencies": { "vite": "^7.1.7" }
 }
