@@ -1,0 +1,19 @@
+# Fly.io: `fly launch --no-deploy --copy-config`, `fly volumes create data --size 1`, `fly deploy`
+app = "tackboard-CHANGE-ME"
+primary_region = "sin"
+[build]
+[env]
+  PORT = "3000"
+  DB_PATH = "/data/board.db"
+[mounts]
+  source = "data"
+  destination = "/data"
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
+  [[http_service.checks]]
+    path = "/healthz"
+    interval = "15s"
+    timeout = "3s"

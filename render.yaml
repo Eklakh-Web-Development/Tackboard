@@ -1,0 +1,11 @@
+# Render Blueprint. Persistent disk requires a paid instance; single instance only (rooms live in memory).
+services:
+  - type: web
+    name: tackboard
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    disk: { name: data, mountPath: /data, sizeGB: 1 }
+    envVars:
+      - { key: DB_PATH, value: /data/board.db }
+      - { key: ALLOWED_ORIGIN, sync: false }
