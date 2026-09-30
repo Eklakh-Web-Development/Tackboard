@@ -62,7 +62,9 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toStr
 const board = (location.hash.slice(1) || 'main').replace(/[^\w-]/g, '').slice(0, 40) || 'main';
 if (!location.hash) history.replaceState(null, '', '#' + board);
 $('#bname').textContent = 'Board: ' + board;
-let myName = 'Guest';
+let myName = localStorage.getItem('tb-name') || prompt('Choose your display name')?.trim() || 'Guest';
+let authToken = localStorage.getItem('tb-token') || '';
+localStorage.setItem('tb-name', myName);
 try {
   myName = localStorage.getItem('tb-name') || ['Otter', 'Heron', 'Lynx', 'Finch', 'Ibex', 'Marten'][Math.floor(Math.random() * 6)] + '-' + Math.floor(Math.random() * 90 + 10);
   localStorage.setItem('tb-name', myName);
@@ -97,7 +99,7 @@ function setStatus(kind) {
 }
 function connect() {
   setStatus('connecting');
-  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?board=${board}&name=${encodeURIComponent(myName)}`);
+  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?board=${board}&token=${encodeURIComponent(authToken)}`);
   ws.onmessage = (e) => onMsg(JSON.parse(e.data));
   ws.onclose = () => { setStatus('offline'); setTimeout(connect, Math.min(10000, 500 * 2 ** retry++) + Math.random() * 300); };
 }
@@ -203,7 +205,15 @@ let tt; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidd
 
 document.addEventListener('dragend', () => { dragging = false; document.querySelectorAll('.lane.over').forEach((l) => l.classList.remove('over')); if (dirty) render(); });
 $('#share').onclick = async () => { try { await navigator.clipboard.writeText(location.href); toast('Board link copied'); } catch { toast(location.href); } };
-build(); connect();
+async function boot() {
+  if (!authToken) {
+    const r = await fetch('/api/auth', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({name:myName}) });
+    if (!r.ok) throw new Error('Authentication failed');
+    const d = await r.json(); authToken = d.token; localStorage.setItem('tb-token', authToken);
+  }
+  build(); connect();
+}
+boot().catch(e => toast(e.message));
 </script>
 </body>
 </html>
