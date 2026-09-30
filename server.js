@@ -95,6 +95,12 @@ const server=http.createServer(async(req,res)=>{
   try{const body=await readBody(req);if(!validName(body.name))return sendJson(res,400,{error:'name must be 1-50 characters'},req);const id=crypto.randomUUID(),rawToken=token();q.insertUser.run(id,body.name.trim(),hash(rawToken));return sendJson(res,201,{user:{id,name:body.name.trim()},token:rawToken},req)}
   catch{return sendJson(res,400,{error:'invalid request'},req)}
  }
+ if(req.method==='GET'&&!url.pathname.startsWith('/api/')){
+  const publicDir=path.join(dir,'public');const file=path.join(publicDir,path.normalize(url.pathname==='/'?'/index.html':url.pathname));
+  if(!file.startsWith(publicDir+path.sep)&&file!==publicDir)return sendJson(res,403,{error:'forbidden'},req);
+  fs.readFile(file,(err,buf)=>{if(err){res.writeHead(404);return res.end('Not found')}const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.ico':'image/x-icon'};res.writeHead(200,{'content-type':types[path.extname(file)]||'application/octet-stream','x-content-type-options':'nosniff','referrer-policy':'same-origin','cache-control':'no-cache'});res.end(buf)});
+  return;
+ }
  const user=auth(req,res);if(!user)return;
  if(url.pathname==='/api/boards'&&req.method==='GET')return sendJson(res,200,q.listBoards.all(user.id).map(b=>({...b,user_role:b.role})),req);
  if(url.pathname==='/api/boards'&&req.method==='POST'){
