@@ -23,5 +23,7 @@ try{
  wb.ws.send(JSON.stringify({t:'op',opId:'o2',op:{type:'card.update',id:'c1',title:'Updated'}}));await next(wa,m=>m.t==='op');
  const boards=await http('GET','/api/boards',null,b.token);assert.equal(boards[0].id,id);
  const activity=await http('GET',`/api/boards/${id}/activity`,null,a.token);assert.ok(activity.length>=2);
+ const share=await http('POST',`/api/boards/${id}/share`,null,a.token);assert.ok(share.shareToken);
+ const denied=await fetch('http://localhost:'+PORT+`/api/boards/${id}/share`,{method:'POST',headers:{'content-type':'application/json','x-auth-token':b.token}});assert.equal(denied.status,403);
  console.log('OK: auth, sharing, realtime sync, idempotency, partial update, membership, activity');
 }catch(e){console.error('FAIL:',e);process.exitCode=1}finally{srv.kill();fs.rmSync(tmp,{recursive:true,force:true})}

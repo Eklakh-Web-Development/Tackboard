@@ -72,7 +72,7 @@ try {
 
 // ---- state: authoritative copy + pending (unacked) ops; the view = server + pending replayed ----
 const server = { cards: new Map(), v: 0 };
-let pending = [], users = [], me = null, ws, retry = 0, editing = false, dragging = false, dirty = false;
+let pending = [], users = [], me = null, ws, retry = 0, editing = false, dragging = false, dirty = false, shareKey = '';
 
 function applyOp(map, op) {
   const c = map.get(op.id);
@@ -204,7 +204,17 @@ function renderWho() {
 let tt; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => (t.hidden = true), 3500); }
 
 document.addEventListener('dragend', () => { dragging = false; document.querySelectorAll('.lane.over').forEach((l) => l.classList.remove('over')); if (dirty) render(); });
-$('#share').onclick = async () => { try { await navigator.clipboard.writeText(location.href); toast('Board link copied'); } catch { toast(location.href); } };
+$('#share').onclick = async () => {
+  try {
+    if (!shareKey) {
+      const r = await fetch('/api/boards/' + encodeURIComponent(board()) + '/share', {method:'POST', headers:{'x-auth-token':authToken}});
+      if (!r.ok) throw new Error('Only the board owner can create a share link');
+      const d = await r.json(); shareKey = d.shareToken;
+    }
+    const link = location.origin + location.pathname + '#' + board() + '?key=' + encodeURIComponent(shareKey);
+    await navigator.clipboard.writeText(link); toast('Share link copied');
+  } catch (e) { toast(e.message); }
+};
 async function boot() {
   if (!authToken) {
     const r = await fetch('/api/auth', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({name:myName}) });
@@ -214,21 +224,23 @@ async function boot() {
   let raw = location.hash.slice(1) || '';
   let [boardId, query] = raw.split('?');
   boardId = (boardId || '').replace(/[^\w-]/g,'').slice(0,40);
-  const shareKey = new URLSearchParams(query || '').get('key') || '';
+  shareKey = new URLSearchParams(query || '').get('key') || localStorage.getItem('tb-share-' + boardId) || '';
   if (!boardId) {
     const r = await fetch('/api/boards', {headers:{'x-auth-token':authToken}});
     const boards = await r.json();
     if (boards[0]) boardId = boards[0].id;
     else {
       const cr = await fetch('/api/boards', {method:'POST',headers:{'content-type':'application/json','x-auth-token':authToken},body:JSON.stringify({name:'My Team Board'})});
-      const d = await cr.json(); boardId = d.board.id;
-      history.replaceState(null,'','#'+boardId+'?key='+encodeURIComponent(d.shareToken));
+      const d = await cr.json(); boardId = d.board.id; shareKey = d.shareToken;
+      localStorage.setItem('tb-share-' + boardId, shareKey);
+      history.replaceState(null,'','#'+boardId);
       return location.reload();
     }
   }
   if (shareKey) {
     const jr = await fetch('/api/boards/'+boardId+'/join?key='+encodeURIComponent(shareKey),{method:'POST',headers:{'x-auth-token':authToken}});
     if (!jr.ok) throw new Error('Invalid board share link');
+    localStorage.setItem('tb-share-' + boardId, shareKey);
     history.replaceState(null,'','#'+boardId);
   }
   window.__TB_BOARD__ = boardId;
