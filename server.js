@@ -118,6 +118,13 @@ const server=http.createServer(async(req,res)=>{
   }
   const membership=q.member.get(boardId,user.id);if(!membership)return sendJson(res,403,{error:'not a board member'},req);
   if(action==='activity'&&req.method==='GET')return sendJson(res,200,q.activity.all(boardId),req);
+  if(action==='share'&&req.method==='POST'){
+   if(membership.role!=='owner')return sendJson(res,403,{error:'owner access required'},req);
+   const shareToken=token();
+   db.prepare('UPDATE boards SET share_token_hash=? WHERE id=?').run(hash(shareToken),boardId);
+   logActivity(boardId,user.id,'board.share',{rotated:true});
+   return sendJson(res,200,{shareToken},req);
+  }
   if(!action&&req.method==='DELETE'){
    if(membership.role!=='owner')return sendJson(res,403,{error:'owner access required'},req);
    db.transaction(()=>q.deleteBoard.run(boardId))();rooms.delete(boardId);return sendJson(res,200,{success:true},req);
