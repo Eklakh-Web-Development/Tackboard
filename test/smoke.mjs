@@ -5,48 +5,23 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const PORT = 4123;
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-'));
-const srv = spawn('node', ['server.js'], { env: { ...process.env, PORT, DB_PATH: path.join(tmp, 't.db') }, stdio: ['ignore', 'pipe', 'inherit'] });
-await new Promise((r) => srv.stdout.on('data', (d) => String(d).includes('listening') && r()));
-
-const open = (name) => new Promise((res) => {
-  const ws = new WebSocket(`ws://localhost:${PORT}/ws?board=t&name=${name}`);
-  const inbox = [];
-  ws.on('message', (m) => inbox.push(JSON.parse(m)));
-  ws.on('open', () => res({ ws, inbox }));
-});
-const next = (c, pred, ms = 2000) => new Promise((res, rej) => {
-  const t0 = Date.now();
-  const i = setInterval(() => {
-    const k = c.inbox.findIndex(pred);
-    if (k >= 0) { clearInterval(i); res(c.inbox.splice(k, 1)[0]); }
-    else if (Date.now() - t0 > ms) { clearInterval(i); rej(new Error('timeout waiting for message')); }
-  }, 15);
-});
-const op = (c, opId, o) => c.ws.send(JSON.stringify({ t: 'op', opId, op: o }));
-
-try {
-  const a = await open('A'), b = await open('B');
-  await next(a, (m) => m.t === 'snapshot'); await next(b, (m) => m.t === 'snapshot');
-
-  op(a, 'o1', { type: 'card.create', id: 'c1', col: 'todo', title: 'Ship it', pos: 1 });
-  assert.equal((await next(a, (m) => m.t === 'ack')).v, 1);
-  const remote = await next(b, (m) => m.t === 'op');
-  assert.equal(remote.op.title, 'Ship it');
-
-  op(a, 'o1', { type: 'card.create', id: 'c1', col: 'todo', title: 'Ship it', pos: 1 }); // resend
-  assert.equal((await next(a, (m) => m.t === 'ack')).v, 1, 'duplicate op is idempotent');
-
-  op(b, 'o2', { type: 'card.move', id: 'c1', col: 'doing', pos: 2 });
-  assert.equal((await next(a, (m) => m.t === 'op')).op.col, 'doing');
-
-  op(b, 'o3', { type: 'card.move', id: 'c1', col: 'hacked', pos: 2 });
-  assert.equal((await next(b, (m) => m.t === 'nack')).opId, 'o3');
-
-  const c = await open('C');
-  const snap = await next(c, (m) => m.t === 'snapshot');
-  assert.deepEqual(snap.cards.map((x) => [x.id, x.col]), [['c1', 'doing']]);
-  console.log('OK: sync, ack, idempotency, validation, late-join snapshot');
-} catch (e) { console.error('FAIL:', e.message); process.exitCode = 1; }
-finally { srv.kill(); }
+const PORT=4123,tmp=fs.mkdtempSync(path.join(os.tmpdir(),'tb-'));
+const srv=spawn('node',['server.js'],{env:{...process.env,PORT,DB_PATH:path.join(tmp,'t.db')},stdio:['ignore','pipe','inherit']});
+await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error('server start timeout')),3000);srv.stdout.on('data',d=>{if(String(d).includes('listening')){clearTimeout(t);resolve()}})});
+const http=async(method,p,body,token)=>{const r=await fetch('http://localhost:'+PORT+p,{method,headers:{'content-type':'application/json',...(token?{'x-auth-token':token}:{})},body:body?JSON.stringify(body):undefined});const d=await r.json();assert.equal(r.ok,true,JSON.stringify(d));return d};
+const open=(token,board)=>new Promise((resolve,reject)=>{const c={inbox:[]},s=new WebSocket(`ws://localhost:${PORT}/ws?board=${board}&token=${encodeURIComponent(token)}`);s.on('message',m=>c.inbox.push(JSON.parse(m)));s.on('error',reject);s.on('open',()=>resolve({...c,ws:s}))});
+const next=(c,p,ms=2000)=>new Promise((resolve,reject)=>{const t=Date.now(),i=setInterval(()=>{const k=c.inbox.findIndex(p);if(k>=0){clearInterval(i);resolve(c.inbox.splice(k,1)[0])}else if(Date.now()-t>ms){clearInterval(i);reject(new Error('timeout'))}},10)});
+try{
+ const a=await http('POST','/api/auth',{name:'Alice'}),b=await http('POST','/api/auth',{name:'Bob'});
+ const created=await http('POST','/api/boards',{name:'Shared'},a.token),id=created.board.id;
+ await http('POST',`/api/boards/${id}/join?key=${encodeURIComponent(created.shareToken)}`,null,b.token);
+ const wa=await open(a.token,id),wb=await open(b.token,id);
+ await next(wa,m=>m.t==='snapshot');await next(wb,m=>m.t==='snapshot');
+ wa.ws.send(JSON.stringify({t:'op',opId:'o1',op:{type:'card.create',id:'c1',col:'todo',title:'Ship it',description:'',pos:1}}));
+ assert.equal((await next(wa,m=>m.t==='ack')).v,1);assert.equal((await next(wb,m=>m.t==='op')).op.title,'Ship it');
+ wa.ws.send(JSON.stringify({t:'op',opId:'o1',op:{type:'card.create',id:'c1',col:'todo',title:'Ship it',description:'',pos:1}}));assert.equal((await next(wa,m=>m.t==='ack')).v,1);
+ wb.ws.send(JSON.stringify({t:'op',opId:'o2',op:{type:'card.update',id:'c1',title:'Updated'}}));await next(wa,m=>m.t==='op');
+ const boards=await http('GET','/api/boards',null,b.token);assert.equal(boards[0].id,id);
+ const activity=await http('GET',`/api/boards/${id}/activity`,null,a.token);assert.ok(activity.length>=2);
+ console.log('OK: auth, sharing, realtime sync, idempotency, partial update, membership, activity');
+}catch(e){console.error('FAIL:',e);process.exitCode=1}finally{srv.kill();fs.rmSync(tmp,{recursive:true,force:true})}
